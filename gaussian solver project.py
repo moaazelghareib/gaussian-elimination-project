@@ -31,24 +31,30 @@ st.markdown("""
         max-width: 1180px;
     }
 
-    /* Hero Banner */
+    /* Hero Banner - readable in both dark and light mode:
+       text inherits Streamlit's theme text color, background is a soft
+       translucent indigo tint that works over dark and light pages. */
     .hero-banner {
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(34, 211, 238, 0.10));
-        border: 1px solid rgba(15, 23, 42, 0.18);
-        border-radius: 16px;
+        background: rgba(99, 102, 241, 0.07);
+        border: 1px solid rgba(128, 128, 128, 0.25);
+        border-left: 4px solid #6366F1;
+        border-radius: 12px;
         padding: 18px 24px;
+        /* Streamlit's fixed 60px app header overlaps the top of the first
+           element when block-container padding-top is small; this margin
+           keeps the banner's top border and rounded corners fully visible. */
+        margin-top: 24px;
         margin-bottom: 18px;
     }
     .hero-title {
         font-size: 1.75rem;
         font-weight: 700;
-        color: #0F172A;
         margin: 0 0 6px 0;
         letter-spacing: -0.3px;
     }
     .hero-sub {
         font-size: 0.95rem;
-        color: #334155;
+        opacity: 0.75;
         margin: 0;
     }
 
