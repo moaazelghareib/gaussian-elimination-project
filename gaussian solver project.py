@@ -653,12 +653,12 @@ with tab1:
             )
 
         with cfg_col2:
-            default_eqs = min(3, int(num_vars))
+            # Equation count is independent of the number of variables.
             num_eqs = st.number_input(
                 "Number of Equations",
                 min_value=1,
-                max_value=int(num_vars),
-                value=default_eqs,
+                max_value=15,
+                value=3,
                 step=1
             )
 
