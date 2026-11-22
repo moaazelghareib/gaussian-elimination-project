@@ -33,8 +33,8 @@ st.markdown("""
 
     /* Hero Banner */
     .hero-banner {
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(34, 211, 238, 0.08));
-        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(34, 211, 238, 0.10));
+        border: 1px solid rgba(15, 23, 42, 0.18);
         border-radius: 16px;
         padding: 18px 24px;
         margin-bottom: 18px;
@@ -42,13 +42,13 @@ st.markdown("""
     .hero-title {
         font-size: 1.75rem;
         font-weight: 700;
-        color: #F8FAFC;
+        color: #0F172A;
         margin: 0 0 6px 0;
         letter-spacing: -0.3px;
     }
     .hero-sub {
         font-size: 0.95rem;
-        color: #94A3B8;
+        color: #334155;
         margin: 0;
     }
 
@@ -248,9 +248,22 @@ def parse_number_to_fraction(raw_val: str, default_zero=True) -> Fraction:
     return Fraction(cleaned)
 
 # ---------------------------------------------------------
-# 4. LaTeX Formatting Helpers
+# 4. Formatting Helpers (Plain Text for Captions + LaTeX for Matrices)
 # ---------------------------------------------------------
+def format_plain_val(val) -> str:
+    """Clean human-readable representation for plain-text captions (no raw LaTeX)."""
+    if isinstance(val, Fraction):
+        if val.denominator == 1:
+            return str(val.numerator)
+        return f"{val.numerator}/{val.denominator}"
+    return str(val)
+
+def format_signed_plain(val) -> str:
+    s = format_plain_val(val)
+    return f"({s})" if s.startswith("-") else s
+
 def format_val(val):
+    """LaTeX representation for matrices and math expressions."""
     if isinstance(val, Fraction) and val.denominator != 1:
         if val < 0:
             return f"-\\frac{{{abs(val.numerator)}}}{{{val.denominator}}}"
@@ -269,6 +282,13 @@ def matrix_to_latex(mat):
 # ---------------------------------------------------------
 # 5. Gaussian & Gauss-Jordan Elimination Engine + Proof Generator
 # ---------------------------------------------------------
+def find_contradiction_row(mat, num_cols):
+    """Returns 1-based row index if row is [0, 0, ..., 0 | rhs != 0], else None."""
+    for r in range(len(mat)):
+        if all(mat[r][c] == 0 for c in range(num_cols)) and mat[r][-1] != 0:
+            return r + 1
+    return None
+
 def compute_rref_and_pivots(mat):
     """Computes exact RREF and pivot positions (row, col) on a copy of mat."""
     rref = [[val for val in row] for row in mat]
@@ -306,6 +326,58 @@ def compute_rref_and_pivots(mat):
 
     return rref, pivot_positions
 
+def compute_back_substitution_steps(mat, pivot_positions, num_cols, var_names):
+    """Generates clear back-substitution steps from Row Echelon Form (REF) for unique solutions."""
+    if len(pivot_positions) != num_cols:
+        return []
+
+    sub_steps = []
+    values = {}
+
+    for r, p_col in reversed(pivot_positions):
+        var_label = var_names[p_col].upper()
+        rhs = mat[r][-1]
+        known_terms_plain = []
+        known_terms_latex = []
+        total_known = Fraction(0)
+
+        for c in range(p_col + 1, num_cols):
+            coeff = mat[r][c]
+            if coeff != 0 and c in values:
+                val = values[c]
+                total_known += coeff * val
+                c_plain = format_signed_plain(coeff)
+                v_plain = format_signed_plain(val)
+                known_terms_plain.append(f"{c_plain}*{v_plain}")
+
+                c_tex = format_val(coeff)
+                v_tex = format_val(val)
+                if coeff < 0:
+                    known_terms_latex.append(f" - {format_val(abs(coeff))}({v_tex})")
+                else:
+                    known_terms_latex.append(f" + {c_tex}({v_tex})")
+
+        sol_val = rhs - total_known
+        values[p_col] = sol_val
+
+        if not known_terms_plain:
+            desc = f"Back-substitute: {var_label} = {format_plain_val(sol_val)}"
+            latex_line = f"{var_label} = {format_val(sol_val)}"
+        else:
+            sub_expr_plain = f"{var_label} + " + " + ".join(known_terms_plain) + f" = {format_plain_val(rhs)}"
+            desc = f"Back-substitute ({sub_expr_plain}) => {var_label} = {format_plain_val(sol_val)}"
+            latex_line = (
+                f"{var_label}{''.join(known_terms_latex)} = {format_val(rhs)} "
+                f"\\implies {var_label} = {format_val(sol_val)}"
+            )
+
+        sub_steps.append({
+            "desc": desc,
+            "latex": latex_line
+        })
+
+    return sub_steps
+
 def analyze_system(mat, num_cols, var_names):
     """
     Analyzes the reduced matrix after elimination steps, determines the exact
@@ -316,7 +388,7 @@ def analyze_system(mat, num_cols, var_names):
     # 1. Check the actual reduced matrix first for any inconsistent row [0 0 ... 0 | b != 0]
     for r in range(num_rows):
         if all(mat[r][c] == 0 for c in range(num_cols)) and mat[r][-1] != 0:
-            rhs_str = str(mat[r][-1])
+            rhs_str = format_plain_val(mat[r][-1])
             zeros_str = ", ".join(["0"] * num_cols)
             proof = (
                 f"<strong>Mathematical Proof (Inconsistent System):</strong><br>"
@@ -329,10 +401,9 @@ def analyze_system(mat, num_cols, var_names):
     # Compute exact RREF for clean parametric expressions & pivot rank verification
     rref, pivot_positions = compute_rref_and_pivots(mat)
 
-    # Double-check RREF for contradiction just in case
     for r in range(len(rref)):
         if all(rref[r][c] == 0 for c in range(num_cols)) and rref[r][-1] != 0:
-            rhs_str = str(rref[r][-1])
+            rhs_str = format_plain_val(rref[r][-1])
             zeros_str = ", ".join(["0"] * num_cols)
             proof = (
                 f"<strong>Mathematical Proof (Inconsistent System):</strong><br>"
@@ -409,20 +480,24 @@ def analyze_system(mat, num_cols, var_names):
 
     return "unique", "Unique Solution Found!", proof, solution
 
-def solve_linear_system(aug_matrix, method="Gauss-Jordan Elimination"):
+def solve_linear_system(aug_matrix, method="Gauss-Jordan Elimination", var_names=None):
     mat = [[val for val in row] for row in aug_matrix]
     steps = []
+    back_sub_steps = []
     num_rows = len(mat)
     num_cols = len(mat[0]) - 1
+    if var_names is None:
+        var_names = [f"x{i+1}" for i in range(num_cols)]
 
     steps.append({
-        "desc": "Initial Augmented Matrix $[A|b]$",
+        "desc": "Initial Augmented Matrix [A|b]",
         "latex": matrix_to_latex(mat)
     })
 
     # Phase 1: Forward Elimination to Row Echelon Form (REF)
     pivot_row = 0
     pivot_positions = []
+    contradiction_stopped = False
 
     for col in range(num_cols):
         if pivot_row >= num_rows:
@@ -440,60 +515,85 @@ def solve_linear_system(aug_matrix, method="Gauss-Jordan Elimination"):
         if sel != pivot_row:
             mat[pivot_row], mat[sel] = mat[sel], mat[pivot_row]
             steps.append({
-                "desc": f"Swap Row {pivot_row+1} with Row {sel+1}: $(R_{{{pivot_row+1}}} \\leftrightarrow R_{{{sel+1}}})$",
+                "desc": f"Swap Row {pivot_row+1} with Row {sel+1}: (R{pivot_row+1} <-> R{sel+1})",
                 "latex": matrix_to_latex(mat)
             })
 
         pivot = mat[pivot_row][col]
         if pivot != 1:
+            piv_plain = format_plain_val(pivot)
+            piv_signed = format_signed_plain(pivot)
             mat[pivot_row] = [val / pivot for val in mat[pivot_row]]
             steps.append({
-                "desc": f"Divide Row {pivot_row+1} by {format_val(pivot)} to create Leading 1: $(\\frac{{1}}{{{format_val(pivot)}}} R_{{{pivot_row+1}}} \\to R_{{{pivot_row+1}}})$",
+                "desc": f"Divide Row {pivot_row+1} by {piv_plain} to create Leading 1: ((1/{piv_signed}) * R{pivot_row+1} -> R{pivot_row+1})",
                 "latex": matrix_to_latex(mat)
             })
 
         for j in range(pivot_row + 1, num_rows):
             factor = mat[j][col]
             if factor != 0:
+                fac_signed = format_signed_plain(factor)
                 mat[j] = [mat[j][c] - factor * mat[pivot_row][c] for c in range(num_cols + 1)]
                 steps.append({
-                    "desc": f"Eliminate entry below pivot in Row {j+1}, Column {col+1}: $(R_{{{j+1}}} - ({format_val(factor)})R_{{{pivot_row+1}}} \\to R_{{{j+1}}})$",
+                    "desc": f"Eliminate entry below pivot in Row {j+1}, Column {col+1}: (R{j+1} - {fac_signed}*R{pivot_row+1} -> R{j+1})",
                     "latex": matrix_to_latex(mat)
                 })
 
         pivot_positions.append((pivot_row, col))
         pivot_row += 1
 
-    steps.append({
-        "desc": "Reached Row Echelon Form (REF).",
-        "latex": matrix_to_latex(mat)
-    })
+        # Stop immediately on contradiction row so we never falsely label an inconsistent matrix as RREF
+        contra_row = find_contradiction_row(mat, num_cols)
+        if contra_row is not None:
+            steps.append({
+                "desc": f"Inconsistent System Detected (Contradiction in Row {contra_row}: 0 = {format_plain_val(mat[contra_row-1][-1])}) — Stopped Reduction",
+                "latex": matrix_to_latex(mat)
+            })
+            contradiction_stopped = True
+            break
 
-    # Phase 2: Backward Elimination for Gauss-Jordan (RREF)
-    if method == "Gauss-Jordan Elimination":
-        for r, p_col in reversed(pivot_positions):
-            for above_r in range(r - 1, -1, -1):
-                factor = mat[above_r][p_col]
-                if factor != 0:
-                    mat[above_r] = [mat[above_r][c] - factor * mat[r][c] for c in range(num_cols + 1)]
-                    steps.append({
-                        "desc": f"Eliminate entry above pivot in Row {above_r+1}: $(R_{{{above_r+1}}} - ({format_val(factor)})R_{{{r+1}}} \\to R_{{{above_r+1}}})$",
-                        "latex": matrix_to_latex(mat)
-                    })
+    if not contradiction_stopped:
+        ref_latex = matrix_to_latex(mat)
+        if steps[-1]["latex"] != ref_latex:
+            steps.append({
+                "desc": "Reached Row Echelon Form (REF).",
+                "latex": ref_latex
+            })
 
-        steps.append({
-            "desc": "Reached Reduced Row Echelon Form (RREF).",
-            "latex": matrix_to_latex(mat)
-        })
+        # Phase 2: Backward Elimination for Gauss-Jordan (RREF)
+        if method == "Gauss-Jordan Elimination":
+            for r, p_col in reversed(pivot_positions):
+                for above_r in range(r - 1, -1, -1):
+                    factor = mat[above_r][p_col]
+                    if factor != 0:
+                        fac_signed = format_signed_plain(factor)
+                        mat[above_r] = [mat[above_r][c] - factor * mat[r][c] for c in range(num_cols + 1)]
+                        steps.append({
+                            "desc": f"Eliminate entry above pivot in Row {above_r+1}: (R{above_r+1} - {fac_signed}*R{r+1} -> R{above_r+1})",
+                            "latex": matrix_to_latex(mat)
+                        })
 
-    status_type, status_msg, proof_html, sol_data = analyze_system(mat, num_cols, [f"x{i+1}" for i in range(num_cols)])
-    return steps, status_type, status_msg, proof_html, sol_data
+            rref_latex = matrix_to_latex(mat)
+            if steps[-1]["latex"] != rref_latex:
+                steps.append({
+                    "desc": "Reached Reduced Row Echelon Form (RREF).",
+                    "latex": rref_latex
+                })
+
+    status_type, status_msg, proof_html, sol_data = analyze_system(mat, num_cols, var_names)
+
+    if method == "Gaussian Elimination" and status_type == "unique" and not contradiction_stopped:
+        back_sub_steps = compute_back_substitution_steps(mat, pivot_positions, num_cols, var_names)
+
+    return steps, back_sub_steps, status_type, status_msg, proof_html, sol_data
 
 # ---------------------------------------------------------
 # 6. Render Steps & Final Result
 # ---------------------------------------------------------
 def render_steps_and_solution(aug_mat, var_names, method):
-    steps, status_type, status_msg, proof_html, sol_data = solve_linear_system(aug_mat, method=method)
+    steps, back_sub_steps, status_type, status_msg, proof_html, sol_data = solve_linear_system(
+        aug_mat, method=method, var_names=var_names
+    )
 
     st.markdown("---")
     st.subheader("Step-by-Step Solution")
@@ -503,6 +603,15 @@ def render_steps_and_solution(aug_mat, var_names, method):
             unsafe_allow_html=True
         )
         st.latex(step["latex"])
+
+    if back_sub_steps:
+        st.markdown("### Back-Substitution Steps")
+        for b_idx, b_step in enumerate(back_sub_steps, 1):
+            st.markdown(
+                f'<div class="step-card"><div class="step-title">Sub-Step {b_idx}: {b_step["desc"]}</div></div>',
+                unsafe_allow_html=True
+            )
+            st.latex(b_step["latex"])
 
     st.markdown("---")
     st.subheader("Final Result & Mathematical Proof")
